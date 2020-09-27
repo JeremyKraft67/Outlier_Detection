@@ -17,6 +17,8 @@ from statsmodels.tsa.seasonal import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
 import logging
 
+import outlier_detection_helper_functions as od_hf
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(funcName)s:\n %(message)s')
 logging.Formatter(fmt='%(asctime)s')
 logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)s {%(module)s} [%(funcName)s] %(message)s',
@@ -32,6 +34,7 @@ train_df = pd.read_csv("train.csv")
 train_df.dtypes
 subset_df = train_df.iloc[:1000,:]
 subset_df
+logging.info("Finished to load the raw data")
 
 # keep only the 2 relevant columns
 train_df_red = train_df[[ 'hour', 'click']].copy()
@@ -44,31 +47,21 @@ train_df_red = pd.read_csv("train_df_red.csv")
 # check the dates
 train_df_red['hour'].min()
 train_df_red['hour'].max()
-
+logging.info("Saved the data with the relevant columns as 'train_df_red.csv'.")
 
 # =============================================================================
 # Data preparation
 # =============================================================================
     
-
 # group by hour
 ctr_df = train_df_red.groupby(['hour'])['click'].agg(sum)
 ctr_df = ctr_df.reset_index(drop=False)
 
-
 # As the data consists of 10 consecutive days in the same month,
 # we can keep only the days and hours
 
-def format_time(hour_str):
-    """ Extract the day and hour."""
-    hour_str = str(hour_str)
-    day = int(hour_str[-4:-2])
-    hour = int(hour_str[-2:])
-    
-    return day, hour
-
 t = time.time()
-time_tuple = list(map(lambda x: format_time(x), list(ctr_df['hour'])))
+time_tuple = list(map(lambda x: od_hf.format_time(x), list(ctr_df['hour'])))
 print("Time to extract days and hours: {}ms".format(round((time.time() - t)*1000, 2)))
 
 # extract the results
@@ -78,31 +71,24 @@ hour_l = list(time_tuple_l[1])
 ctr_df['day'] = day_l
 ctr_df['hour'] = hour_l
 
-
-def concat_day_hour(ind, day_str, hour_str):
-    day_hour = str(day_str[ind]) + '.' + str(hour_str[ind])
-    return day_hour
 # create a concatenation of day and hour for prettier x abisses in the plots 
 ctr_df['hour_lin'] =\
     list(
         map(lambda x:
-          concat_day_hour(x,
+          od_hf.concat_day_hour(x,
               list(ctr_df['day']),
               list(ctr_df['hour'])),
               list(range(len(list(ctr_df['day']))))
               )
           )
 
-# hour since first day
-# ctr_df['hour_lin'] = ctr_df.index
 
 # plot the CTR
 # plot by index to avoid blanks when plotting by 'hour_concat'
 
 plt.plot(ctr_df['hour_lin'], ctr_df['click'],
          linewidth=1,markersize=2,
-          marker="o",label=name)
-
+          marker="o")
 plt.title('CTR per hour',
           fontsize=14, fontweight='bold')
 plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=12)
@@ -119,6 +105,7 @@ logging.info("Figure: '" + title + "' saved.")
 ctr_df_hour = ctr_df.groupby(['day', 'hour'])['click'].agg(sum)
 ctr_df_hour = ctr_df_hour.reset_index(drop=False)
 
+plt.close()
 groups = ctr_df_hour.groupby("day")
 for name, group in groups:
     plt.plot(group["hour"], group["click"],
@@ -133,103 +120,12 @@ plt.xlabel('Hour', fontweight='bold', fontsize=12)
 plt.xticks(np.arange(0, 24, 1.0))
 plt.legend(title='Day', loc='upper right')
 
+logging.info("Finished preparing the data.")
 
 # =============================================================================
 # outliers detection
 # =============================================================================
 
-def plot_outliers(ctr_df, window, multiplot=True):
-    """
-    Plot the outliers
-
-    Parameters
-    ---------
-    ctr_df : Pandas dataframe
-        Dataframe with at least the columns: ['click', 'hour_lin', 'is_outlier']
-    window : int
-        Window of the moving average
-   multiplot : bool
-       True for multiplot, False otherwise
-
-    """
-    
-    if multiplot:
-        # plot the ouliers
-        subplot_num = int(str(math.ceil(len(window_list)/qty_sublpot_col))
-                          + str(qty_sublpot_col)
-                          + str(plot_ind)) + 1                        
-        plt.subplot(subplot_num)
-    
-    ctr_df_outlier = ctr_df[ctr_df['is_outlier']].copy()
-    ctr_df_no_outlier = ctr_df[~ctr_df['is_outlier']].copy()
-    plt.scatter(ctr_df_outlier['hour_lin'], ctr_df_outlier['click'],
-                c='red', s=4, label='outlier')
-    plt.scatter(ctr_df_no_outlier['hour_lin'], ctr_df_no_outlier['click'],
-            c='green', s=4, label='no outlier')
-
-    plt.plot('hour_lin', 'mean',
-              data=ctr_df, linewidth=1)
-    plt.title('Outliers for window {win}'.format(win=window),
-              fontsize=fontsize, fontweight='bold')
-    plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=fontsize)
-    plt.xlabel('Hour', fontweight='bold', fontsize=fontsize)
-    plt.xticks(np.arange(0, 240, 8.0))
-    plt.xticks(rotation='vertical')
-    plt.grid()
-    # plt.legend(bbox_to_anchor=(1, 1), loc='upper left', prop=fontP)
-    plt.legend(loc='upper right',prop=fontP)
-    
-
-
-def plot_outliers(ctr_df, window, multiplot=True):
-    """
-    Plot the outliers
-
-    Parameters
-    ---------
-    ctr_df : Pandas dataframe
-        Dataframe with at least the columns: ['click', 'hour_lin', 'is_outlier']
-    window : int
-        Window of the moving average
-    multiplot : bool
-       True for multiplot, False otherwise
-       
-    Returns
-    -------
-    plt : Matplotlib plot
-        The plot.
-
-    """
-    
-    if multiplot:
-        # plot the ouliers
-        subplot_num = int(str(math.ceil(len(window_list)/qty_sublpot_col))
-                          + str(qty_sublpot_col)
-                          + str(plot_ind)) + 1                        
-        plt.subplot(subplot_num)
-    
-    # ctr_df['hour_lin'] = ctr_df['hour_lin'].astype(float)
-    ctr_df['hour_lin'] = ctr_df.index
-    
-    ctr_df_outlier = ctr_df[ctr_df['is_outlier']].copy()
-    ctr_df_no_outlier = ctr_df[~ctr_df['is_outlier']].copy()
-    plt.scatter(ctr_df_outlier['hour_lin'], ctr_df_outlier['click'],
-                c='red', s=4, label='outlier')
-    plt.scatter(ctr_df_no_outlier['hour_lin'], ctr_df_no_outlier['click'],
-            c='green', s=4, label='no outlier')
-
-    plt.plot('hour_lin', 'mean',
-              data=ctr_df, linewidth=1)
-    plt.title('Outliers for window {win}'.format(win=window),
-              fontsize=fontsize, fontweight='bold')
-    plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=fontsize)
-    plt.xlabel('Hour', fontweight='bold', fontsize=fontsize)
-    # plt.xticks(np.arange(21, 31, 0.4))
-    plt.xticks(rotation='vertical')
-    plt.grid()
-    # plt.legend(bbox_to_anchor=(1, 1), loc='upper left', prop=fontP)
-    plt.legend(loc='upper right',prop=fontP)
-    
 
 # find the outliers using the moving average method
 # compute the rolling mean, then plot several windows to select the best one
@@ -239,13 +135,16 @@ window_list = list(range(3, 12))
 thresh = 1.5
 qty_sublpot_col = 2
 
+plt.close()
 plt.figure()
-fontsize = 8
-fontP = FontProperties()
-fontP.set_size('xx-small')
-
 
 for plot_ind, window in enumerate(window_list):
+    
+    # plot the ouliers
+    subplot_num = int(str(math.ceil(len(window_list)/qty_sublpot_col))
+                  + str(qty_sublpot_col)
+                  + str(plot_ind)) + 1                        
+    
     # compute rolling means
     roll_avg = ctr_df['click'].rolling(window=window, center=True)
     
@@ -258,13 +157,15 @@ for plot_ind, window in enumerate(window_list):
     ctr_df['is_outlier'] =  (ctr_df['click'] >= (ctr_df['mean'] + thresh * ctr_df['std']))\
                             | (ctr_df['click'] <= (ctr_df['mean'] - thresh * ctr_df['std']))
     
-    plot_outliers(ctr_df, window, True)
+    od_hf.plot_outliers(ctr_df, window, True,
+                        window_name='window',
+                        subplot_num=subplot_num)
 plt.subplots_adjust(hspace=0.8)
 
 
 # Based on a visual inspection, a window of 6 seems to work well
 plt.close()
-plot_outliers(ctr_df, window=6, multiplot=False)
+od_hf.plot_outliers(ctr_df, window=6, multiplot=False)
 title = 'Outliers.png'
 plt.savefig(title)
 logging.info("Figure: '" + title + "' saved.")
@@ -295,7 +196,7 @@ std = ctr_df['residue'].std()
 ctr_df['is_outlier'] =  (ctr_df['residue'] >= (mean + thresh * std))\
                       | (ctr_df['residue'] <= (mean - thresh * std))
 plt.close()                     
-plot_outliers(ctr_df, window, False)  
+od_hf.plot_outliers(ctr_df, thresh, False, window_name='threshold')  
   
 # There seems to be a lot of false positive.
 # Let's tune the threshold.
@@ -304,12 +205,16 @@ plot_outliers(ctr_df, window, False)
 thresh_list = [1.5, 2, 2.5, 3, 3.5, 4]        
 qty_sublpot_col = 2
 
+plt.close()
 plt.figure()
-fontsize = 8
-fontP = FontProperties()
-fontP.set_size('xx-small')
+
+# plot the ouliers
 
 for plot_ind, thresh in enumerate(thresh_list):
+    
+    subplot_num = int(str(math.ceil(len(thresh_list)/qty_sublpot_col))
+                  + str(qty_sublpot_col)
+                  + str(plot_ind)) + 1  
 
     stl = STL(ctr_df['click'], period=24, low_pass=25,
               seasonal=15,
@@ -330,7 +235,9 @@ for plot_ind, thresh in enumerate(thresh_list):
     # compute outliers
     ctr_df['is_outlier'] =  (ctr_df['residue'] >= (mean + thresh * std))\
                           | (ctr_df['residue'] <= (mean - thresh * std))
-    plot_outliers(ctr_df, thresh, True)
+    od_hf.plot_outliers(ctr_df, thresh, True,
+                        window_name='threshold',
+                        subplot_num=subplot_num)
 plt.subplots_adjust(hspace=0.8)
 
 # A threshold of 3 might work.
@@ -339,16 +246,17 @@ plt.subplots_adjust(hspace=0.8)
 
 # Let's try the Median Absolute Deviation from the median
 
-
 thresh_list = [1.5, 2, 2.5, 3, 4, 5, 6, 7, 8]        
 qty_sublpot_col = 2
 
 plt.figure()
-fontsize = 8
-fontP = FontProperties()
-fontP.set_size('xx-small')
+
 
 for plot_ind, thresh in enumerate(thresh_list):
+    
+    subplot_num = int(str(math.ceil(len(thresh_list)/qty_sublpot_col))
+                  + str(qty_sublpot_col)
+                  + str(plot_ind)) + 1  
 
     stl = STL(ctr_df['click'], period=24, low_pass=25,
               seasonal=15,
@@ -368,7 +276,11 @@ for plot_ind, thresh in enumerate(thresh_list):
     mad = abs(median - ctr_df['residue']).median()
     ctr_df['is_outlier'] =  abs(ctr_df['residue'])\
                               >= (median + thresh * mad) 
-    plot_outliers(ctr_df, thresh, True)
+    od_hf.plot_outliers(ctr_df, thresh, True,
+                        window_name='threshold',
+                        subplot_num=subplot_num)
 plt.subplots_adjust(hspace=0.8)
 
 # A large threshold of 5 seems acceptable.
+
+logging.info("Finished analyzing the outliers.")
