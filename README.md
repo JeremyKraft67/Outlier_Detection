@@ -8,13 +8,19 @@ https://www.kaggle.com/c/avazu-ctr-prediction
 https://www.kaggle.com/c/avazu-ctr-prediction
 - unpack the 'train.csv' into the local folder.
 - Create a virtual environment with Python 3.6.9:
+```
 mkdir env
 python3 -m venv env
 source env/bin/activate
+```
 - Install the required libraries:
+```
 pip3 install -r requirements.txt
+```
 - launch the code:
+```
 python3 outlier_detection.py
+```
 or with your favorite IDE.
 
 It will create 2 plots in your local folder:
@@ -39,6 +45,7 @@ We improve the algorithm by doing a Season Trend Loess decomposition to separate
 - trend
 - season
 - residues
+
 We then run the outlier detection on the residue only, instead of the raw data.
 We find that the STL decomposition gives interesting results but is less robust.
 We get either too many false positives or it is too conservative.
