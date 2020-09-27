@@ -15,26 +15,50 @@ import time
 from datetime import datetime
 from statsmodels.tsa.seasonal import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
+import logging
 
-# train_df = pd.read_csv("train.csv")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(funcName)s:\n %(message)s')
+logging.Formatter(fmt='%(asctime)s')
+logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)s {%(module)s} [%(funcName)s] %(message)s',
+                    datefmt='%Y-%m-%d,%H:%M:%S', level=logging.INFO)
 
-train_df_red = pd.read_csv("train_df_red.csv")
-# train_df_red['hour_concat'] = train_df['hour']
-# train_df.shape
+# =============================================================================
+# # Load the data
+# =============================================================================
 
-# train_df_red.to_csv("train_df_red.csv", index=False)
+# open the raw data located in the same folder as the script
+train_df = pd.read_csv("train.csv")
+# Let's examine the data
+train_df.dtypes
+subset_df = train_df.iloc[:1000,:]
+subset_df
 
 # keep only the 2 relevant columns
-# train_df_red = train_df[[ 'hour', 'click']].copy()
+train_df_red = train_df[[ 'hour', 'click']].copy()
+# save the smaller dataset
+train_df_red.to_csv("train_df_red.csv", index=False)
+
+# load the smaller dataset for speed
+train_df_red = pd.read_csv("train_df_red.csv")
+
 # check the dates
-train_df_red['hour_concat'].min()
-train_df_red['hour_concat'].max()
+train_df_red['hour'].min()
+train_df_red['hour'].max()
 
 
+# =============================================================================
+# Data preparation
+# =============================================================================
+    
 
-# As the data consists of 11 consecutive days in the same month,
+# group by hour
+ctr_df = train_df_red.groupby(['hour'])['click'].agg(sum)
+ctr_df = ctr_df.reset_index(drop=False)
+
+
+# As the data consists of 10 consecutive days in the same month,
 # we can keep only the days and hours
-hour_str = 14103023
+
 def format_time(hour_str):
     """ Extract the day and hour."""
     hour_str = str(hour_str)
@@ -44,72 +68,92 @@ def format_time(hour_str):
     return day, hour
 
 t = time.time()
-time_tuple = list(map(lambda x: format_time(x), list(train_df_red['hour'])))
-print("Time to extract days and hours: {}s".format(round((time.time() - t), 2)))
-
-# train_df_red['time_stamp'] = pd.Timestamp(time_tuple)
-# pd.Timestamp(time_tuple)
+time_tuple = list(map(lambda x: format_time(x), list(ctr_df['hour'])))
+print("Time to extract days and hours: {}ms".format(round((time.time() - t)*1000, 2)))
 
 # extract the results
 time_tuple_l = list(zip(*time_tuple))
 day_l = list(time_tuple_l[0])
 hour_l = list(time_tuple_l[1])
-train_df_red['day'] = day_l
-train_df_red['hour'] = hour_l
+ctr_df['day'] = day_l
+ctr_df['hour'] = hour_l
 
-# def concat_day_hour(ind, day_str, hour_str):
-#     day_hour = int(str(day_str[ind]) + str(hour_str[ind]))
-#     return day_hour
-# # create a concatenation of day and hour for the group by    
-# train_df_red['day_hour'] =\
-#     list(map(lambda x:
-#              concat_day_hour(x,
-#                  list(range(len(list(train_df_red['day'])))),
-#                  list(train_df_red['day'])),
-#              list(train_df_red['hour']))
-#          )
-    
 
-# group by hour
-ctr_df = train_df_red.groupby(['hour_concat'])['click'].agg(sum)
-ctr_df = ctr_df.reset_index(drop=False)
+def concat_day_hour(ind, day_str, hour_str):
+    day_hour = str(day_str[ind]) + '.' + str(hour_str[ind])
+    return day_hour
+# create a concatenation of day and hour for prettier x abisses in the plots 
+ctr_df['hour_lin'] =\
+    list(
+        map(lambda x:
+          concat_day_hour(x,
+              list(ctr_df['day']),
+              list(ctr_df['hour'])),
+              list(range(len(list(ctr_df['day']))))
+              )
+          )
+
 # hour since first day
-ctr_df['hour_lin'] = ctr_df.index
-
+# ctr_df['hour_lin'] = ctr_df.index
 
 # plot the CTR
 # plot by index to avoid blanks when plotting by 'hour_concat'
-plt.scatter(list(ctr_df['hour_lin']), ctr_df['click'])
+
+plt.plot(ctr_df['hour_lin'], ctr_df['click'],
+         linewidth=1,markersize=2,
+          marker="o",label=name)
+
 plt.title('CTR per hour',
           fontsize=14, fontweight='bold')
 plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=12)
 plt.xlabel('Day & Hour', fontweight='bold', fontsize=12)
+plt.xticks(np.arange(0, 240, 8.0))
+plt.xticks(rotation='vertical')
+plt.grid()
 # the data corresponds to 10 consecutive days
+title = 'CTR per Hour.png'
+plt.savefig(title)
+logging.info("Figure: '" + title + "' saved.")
 
-
-# plot the CTR
-ctr_df_hour = train_df_red.groupby(['day', 'hour'])['click'].agg(sum)
+# plot the CTR per hour
+ctr_df_hour = ctr_df.groupby(['day', 'hour'])['click'].agg(sum)
 ctr_df_hour = ctr_df_hour.reset_index(drop=False)
 
 groups = ctr_df_hour.groupby("day")
 for name, group in groups:
-    plt.plot(group["hour"], group["click"], marker="o", linestyle="", label=name)
+    plt.plot(group["hour"], group["click"],
+             linewidth=1,markersize=2,
+              marker="o",label=name)
 
 plt.legend()
 plt.title('Clicks per hour',
           fontsize=14, fontweight='bold')
 plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=12)
 plt.xlabel('Hour', fontweight='bold', fontsize=12)
-plt.legend(loc='upper right')
+plt.xticks(np.arange(0, 24, 1.0))
+plt.legend(title='Day', loc='upper right')
 
 
 # =============================================================================
 # outliers detection
 # =============================================================================
 
-def plot_outliers(ctr_df, window, moving_avg=True):
+def plot_outliers(ctr_df, window, multiplot=True):
+    """
+    Plot the outliers
+
+    Parameters
+    ---------
+    ctr_df : Pandas dataframe
+        Dataframe with at least the columns: ['click', 'hour_lin', 'is_outlier']
+    window : int
+        Window of the moving average
+   multiplot : bool
+       True for multiplot, False otherwise
+
+    """
     
-    if moving_avg:
+    if multiplot:
         # plot the ouliers
         subplot_num = int(str(math.ceil(len(window_list)/qty_sublpot_col))
                           + str(qty_sublpot_col)
@@ -129,7 +173,60 @@ def plot_outliers(ctr_df, window, moving_avg=True):
               fontsize=fontsize, fontweight='bold')
     plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=fontsize)
     plt.xlabel('Hour', fontweight='bold', fontsize=fontsize)
+    plt.xticks(np.arange(0, 240, 8.0))
+    plt.xticks(rotation='vertical')
+    plt.grid()
+    # plt.legend(bbox_to_anchor=(1, 1), loc='upper left', prop=fontP)
+    plt.legend(loc='upper right',prop=fontP)
+    
 
+
+def plot_outliers(ctr_df, window, multiplot=True):
+    """
+    Plot the outliers
+
+    Parameters
+    ---------
+    ctr_df : Pandas dataframe
+        Dataframe with at least the columns: ['click', 'hour_lin', 'is_outlier']
+    window : int
+        Window of the moving average
+    multiplot : bool
+       True for multiplot, False otherwise
+       
+    Returns
+    -------
+    plt : Matplotlib plot
+        The plot.
+
+    """
+    
+    if multiplot:
+        # plot the ouliers
+        subplot_num = int(str(math.ceil(len(window_list)/qty_sublpot_col))
+                          + str(qty_sublpot_col)
+                          + str(plot_ind)) + 1                        
+        plt.subplot(subplot_num)
+    
+    # ctr_df['hour_lin'] = ctr_df['hour_lin'].astype(float)
+    ctr_df['hour_lin'] = ctr_df.index
+    
+    ctr_df_outlier = ctr_df[ctr_df['is_outlier']].copy()
+    ctr_df_no_outlier = ctr_df[~ctr_df['is_outlier']].copy()
+    plt.scatter(ctr_df_outlier['hour_lin'], ctr_df_outlier['click'],
+                c='red', s=4, label='outlier')
+    plt.scatter(ctr_df_no_outlier['hour_lin'], ctr_df_no_outlier['click'],
+            c='green', s=4, label='no outlier')
+
+    plt.plot('hour_lin', 'mean',
+              data=ctr_df, linewidth=1)
+    plt.title('Outliers for window {win}'.format(win=window),
+              fontsize=fontsize, fontweight='bold')
+    plt.ylabel('Quantity of clicks', fontweight='bold', fontsize=fontsize)
+    plt.xlabel('Hour', fontweight='bold', fontsize=fontsize)
+    # plt.xticks(np.arange(21, 31, 0.4))
+    plt.xticks(rotation='vertical')
+    plt.grid()
     # plt.legend(bbox_to_anchor=(1, 1), loc='upper left', prop=fontP)
     plt.legend(loc='upper right',prop=fontP)
     
@@ -167,8 +264,10 @@ plt.subplots_adjust(hspace=0.8)
 
 # Based on a visual inspection, a window of 6 seems to work well
 plt.close()
-plot_outliers(ctr_df, window=6, moving_avg=False)
-
+plot_outliers(ctr_df, window=6, multiplot=False)
+title = 'Outliers.png'
+plt.savefig(title)
+logging.info("Figure: '" + title + "' saved.")
 
 # compute outliers with STL
 
@@ -182,10 +281,10 @@ stl = STL(ctr_df['click'], period=24, low_pass=25,
           trend_deg=1,
           robust=True)
 residue = stl.fit()
-fig1 = res.plot()
+fig1 = residue.plot()
 
 # extract residues
-residue = res.resid
+residue = residue.resid
 ctr_df['residue'] = residue
 # compute rolling means
 roll_avg = ctr_df['click'].rolling(window=window, center=True)
@@ -221,7 +320,7 @@ for plot_ind, thresh in enumerate(thresh_list):
     # fig1 = res.plot()
     
     # extract residues
-    residue = res.resid
+    residue = residue.resid
     ctr_df['residue'] = residue
     # compute rolling means
     roll_avg = ctr_df['click'].rolling(window=window, center=True)
@@ -260,7 +359,7 @@ for plot_ind, thresh in enumerate(thresh_list):
     # fig1 = res.plot()
     
     # extract residues
-    residue = res.resid
+    residue = residue.resid
     ctr_df['residue'] = residue
     # compute rolling means
     roll_avg = ctr_df['click'].rolling(window=window, center=True)
